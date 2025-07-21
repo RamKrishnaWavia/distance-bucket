@@ -93,21 +93,70 @@ def process_drop_points(df, reference_lat, reference_lon):
 
     return df
 
+def create_input_template(file_name="drop_point_template.csv"):  # Corrected Function signature
+    """
+    Creates and provides a downloadable CSV template with example data.
+
+    Args:
+        file_name: The name of the template CSV file.
+    """
+    columns = [
+        "city name",
+        "society ID",
+        "society name",
+        "drop point ID",
+        "drop point name",
+        "drop point lat",
+        "drop long"
+    ]
+
+    sample_data = {
+        "city name": "Bangalore",
+        "society ID": 12345,
+        "society name": "Example Society",
+        "drop point ID": 1,
+        "drop point name": "Gate 1",
+        "drop point lat": 12.9716,  # Example latitude
+        "drop long": 77.5946   # Example longitude
+    }
+
+    df = pd.DataFrame([sample_data], columns=columns)
+
+    # Create a buffer in memory
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+
+    # Convert buffer to bytes
+    b = bytes(csv_buffer.getvalue().encode())
+
+
+    # Use st.download_button to create the download link
+    st.sidebar.download_button(
+        label="Download Input Template",
+        data=b,
+        file_name=file_name,
+        mime="text/csv"
+    )
+    st.sidebar.write("Populate the downloaded CSV with your data and upload it.")
 
 # --- Streamlit App ---
 
 st.title("Drop Point Distance Calculator")
 
-# --- 1. Upload CSV ---
-st.sidebar.header("1. Upload CSV File")
+# --- 1. Downloadable template in the sidebar ---
+create_input_template() # call function here
+
+# --- 2. Upload CSV --- (file uploader in sidebar, below the download template button)
+st.sidebar.header("Upload CSV File")
 uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
-# --- 2. Input Reference Coordinates ---
-st.sidebar.header("2. Enter Reference Coordinates")
+
+# --- 3. Input Reference Coordinates ---
+st.sidebar.header("Enter Reference Coordinates")
 reference_latitude = st.sidebar.number_input("Reference Latitude", min_value=-90.0, max_value=90.0, value=12.9392379)
 reference_longitude = st.sidebar.number_input("Reference Longitude", min_value=-180.0, max_value=180.0, value=77.7289339)
 
-# --- 3. Process Data (if file uploaded and coordinates entered) ---
+# --- 4. Process Data (if file uploaded and coordinates entered) ---
 if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file)

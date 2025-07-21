@@ -153,43 +153,9 @@ uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
 
 # --- 3. Input Reference Coordinates ---
-st.sidebar.header("Enter Reference City and Coordinates")
-# Added city selection
-city_options = []  #  Initialize an empty list for city options
-if uploaded_file is not None:
-    try:
-        df = pd.read_csv(uploaded_file)
-        if 'city name' in df.columns:
-          city_options = df['city name'].unique().tolist() # Get unique city names
-
-    except Exception as e:
-      st.error(f"Error reading file to populate city: {e}")
-# Default Option
-if not city_options:
-    city_options = ["Enter Coordinates Below"]  # Provide an instruction
-
-selected_city = st.sidebar.selectbox("Select City (or Enter Coordinates)", city_options)
-
-
-reference_latitude = None
-reference_longitude = None
-
-if selected_city == "Enter Coordinates Below" or not city_options: # Allow coordinate input if no cities or instruction selected
-    reference_latitude = st.sidebar.number_input("Reference Latitude", min_value=-90.0, max_value=90.0, value=12.9392379)
-    reference_longitude = st.sidebar.number_input("Reference Longitude", min_value=-180.0, max_value=180.0, value=77.7289339)
-else: # If a city is selected, get lat/lon from uploaded data.
-   if uploaded_file is not None: #Only process if file uploaded
-       try:
-           df = pd.read_csv(uploaded_file)
-           city_data = df[df['city name'] == selected_city] # filter for city
-           if not city_data.empty:
-               # Get the first row's coordinates as the reference.  Can be customized
-               reference_latitude = city_data['drop point lat'].iloc[0]
-               reference_longitude = city_data['drop long'].iloc[0]
-           else:
-               st.warning(f"No data found for city '{selected_city}'.  Please enter coordinates below, or select a valid city.")
-       except Exception as e:
-           st.error(f"Error getting coordinates for city: {e}")
+st.sidebar.header("Enter Reference Coordinates")
+reference_latitude = st.sidebar.number_input("Reference Latitude", min_value=-90.0, max_value=90.0, value=12.9392379)
+reference_longitude = st.sidebar.number_input("Reference Longitude", min_value=-180.0, max_value=180.0, value=77.7289339)
 
 
 # --- 4. Process Data (if file uploaded and coordinates entered) ---
@@ -200,7 +166,7 @@ if uploaded_file is not None and reference_latitude is not None and reference_lo
         processed_df = process_drop_points(df.copy(), reference_latitude, reference_longitude)  # Pass a copy to avoid modifying the original
         if processed_df is not None:
             # --- Display Results ---
-            st.subheader(f"Processed Data for {selected_city if selected_city != 'Enter Coordinates Below' else 'Entered Coordinates'}")
+            st.subheader("Processed Data")
             st.dataframe(processed_df) # Use st.dataframe to render the DataFrame
             st.subheader("Distance Bucket Counts")
             st.write(processed_df['Distance Bucket'].value_counts())

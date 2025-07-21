@@ -3,6 +3,9 @@ import pandas as pd
 from geopy.distance import geodesic
 import io
 
+# Set the page to a wide layout for better data viewing
+st.set_page_config(layout="wide")
+
 def calculate_distances(df):
     """
     Calculates the distance between consecutive points in a DataFrame.
@@ -52,54 +55,54 @@ def bucketize_distance(km):
     else: # km >= 5
         return "> 5 km"
 
-# --- Streamlit App ---
-
-st.set_page_config(layout="wide")
+# --- Streamlit App UI ---
 
 st.title("Location Distance and Bucketing Tool")
-st.write("Paste your location data below, including a 'Society ID', or upload a CSV file. The tool will calculate the distance between each consecutive point and categorize it into buckets.")
+st.write("Paste your location data below, including a 'Society ID', or upload a CSV/text file. The tool will calculate the distance between each consecutive point and categorize it into buckets.")
 
-# Sample data to show the format
-sample_data = """
-SID_001,28.70232415,77.41863392
-SID_001,28.6797132,77.3246482
-SID_002,28.67619,77.31593
+# Sample data to guide the user
+sample_data = """3181 23.178967 72.628454
+3182 23.178967 72.628454
+56877 23.178967 72.628454
+7883 23.16648643 72.537158
+56878 23.16648643 72.537158
 """
 
 st.subheader("Input Data")
 
+# Layout for data input
 col1, col2 = st.columns(2)
 
 with col1:
     st.write("Option 1: Paste your data")
-    # Use spaces as a separator to handle the new data format
     text_input = st.text_area(
         "Paste data here (Society ID, Latitude, Longitude)",
-        value="3181 23.178967 72.628454\n3182 23.178967 72.628454",
+        value=sample_data,
         height=250,
         help="Each line should contain Society ID, Latitude, and Longitude, separated by spaces or commas."
     )
 
 with col2:
-    st.write("Option 2: Upload a CSV/Text file")
+    st.write("Option 2: Upload a file")
     uploaded_file = st.file_uploader(
-        "Choose a file",
+        "Choose a CSV or Text file",
         type=["csv", "txt"],
-        help="The file should have columns: 'Society ID', 'Latitude', 'Longitude'"
+        help="The file should have columns: 'Society ID', 'Latitude', 'Longitude', separated by spaces or commas."
     )
 
+# --- Processing Logic ---
 
+# Check if there is any input to process
 if uploaded_file is not None or text_input:
     try:
+        # Determine the data source
         if uploaded_file is not None:
-            # If a file is uploaded, use it
+            # If a file is uploaded, read it. Use `delim_whitespace` to handle space-separated values.
             df = pd.read_csv(uploaded_file, header=None, delim_whitespace=True, names=['Society ID', 'Latitude', 'Longitude'])
         else:
-            # Otherwise, use the text input
+            # Otherwise, use the text input.
             data = io.StringIO(text_input)
             df = pd.read_csv(data, header=None, delim_whitespace=True, names=['Society ID', 'Latitude', 'Longitude'])
-
-        # --- Data Processing ---
 
         # 1. Calculate distances
         df['Distance (km)'] = calculate_distances(df)
@@ -113,6 +116,24 @@ if uploaded_file is not None or text_input:
         st.write("Showing all rows. Non-zero distances indicate movement from the previous point.")
         st.dataframe(df)
 
+        # --- ADD A DOWNLOAD BUTTON ---
+        st.subheader("Download Processed Data")
+        
+        # Convert DataFrame to CSV format in memory
+        @st.cache_data
+        def convert_df_to_csv(df_to_convert):
+            return df_to_convert.to_csv(index=False).encode('utf-8')
+
+        csv = convert_df_to_csv(df)
+
+        st.download_button(
+           label="Download data as CSV",
+           data=csv,
+           file_name='processed_location_data.csv',
+           mime='text/csv',
+        )
+
+        # --- Display Summary ---
         st.subheader("Summary of Distance Buckets (Only for Movements)")
 
         # Define the desired order for the buckets
@@ -125,7 +146,6 @@ if uploaded_file is not None or text_input:
             "< 1 km",
         ]
 
-        # --- THIS IS THE KEY CHANGE ---
         # First, create a new DataFrame that ONLY includes rows where there was a move.
         moving_df = df[df['Distance (km)'] > 0]
 
@@ -133,7 +153,6 @@ if uploaded_file is not None or text_input:
         bucket_counts = moving_df['Distance Bucket'].value_counts().reindex(bucket_order).fillna(0).astype(int)
 
         st.table(bucket_counts)
-
 
     except Exception as e:
         st.error(f"An error occurred while processing the data. Please check your data format.")

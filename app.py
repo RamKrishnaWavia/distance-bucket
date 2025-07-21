@@ -2,6 +2,7 @@ import pandas as pd
 from geopy.distance import geodesic
 import streamlit as st
 import io
+import itertools  # Import itertools
 
 # --- Function Definitions ---
 
@@ -51,18 +52,17 @@ def categorize_distance(distance):
     else:
         return ">= 5 km"
 
-def process_drop_points(df, reference_lat, reference_lon):
+
+def process_drop_points(df):  # No reference coords anymore.
     """
-    Processes drop points from a DataFrame, calculates distances, and categorizes
-    them into distance buckets.
+    Processes drop points from a DataFrame, calculates distances *between all points*,
+    and categorizes them into distance buckets.
 
     Args:
         df: DataFrame containing drop point data.
-        reference_lat: Latitude of the reference drop point.
-        reference_lon: Longitude of the reference drop point.
 
     Returns:
-        A DataFrame with distance and distance bucket columns, or None on error.
+        A DataFrame with a 'Distance Bucket' column, or None on error.
     """
     try:
         # Handle potential errors with column names
@@ -79,6 +79,37 @@ def process_drop_points(df, reference_lat, reference_lon):
         # Remove rows with NaN values (which result from failed numeric conversion)
         df = df.dropna(subset=[lat_column, lon_column])
 
+
+        # --- Calculate distances between all *pairs* of points ---
+        distances = []
+        for index1, row1 in df.iterrows():
+            for index2, row2 in df.iterrows():  # Iterate through *all* pairs
+                if index1 != index2:  # Don't calculate distance to itself
+                    dist = calculate_distance(row1[lat_column], row1[lon_column], row2[lat_column], row2[lon_column])
+                    if dist is not None:
+                        distances.append((row1['drop point ID'], row2['drop point ID'], dist)) #Store by ID
+
+        # Create a dictionary to store distances for each drop point
+        drop_point_distances = {}
+        for dp1_id, dp2_id, dist in distances:
+            if dp1_id not in drop_point_distances:
+                drop_point_distances[dp1_id] = []
+            if dp2_id not in drop_point_distances:
+                drop_point_distances[dp2_id] = []
+            drop_point_distances[dp1_id].append(dist)
+            drop_point_distances[dp2_id].append(dist)
+
+        # --- Categorize distances into buckets for each drop point ---
+        distance_buckets = {}
+        for dp_id, dist_list in drop_point_distances.items():
+            # average distance for the drop point to all other points.
+            avg_distance = sum(dist_list) / len(dist_list)
+            distance_buckets[dp_id] = categorize_distance(avg_distance)
+        # Add a 'Distance Bucket' column to the DataFrame.
+        df['Distance Bucket'] = df['drop point ID'].map(distance_buckets)
+
+        return df
+
     except (IndexError, KeyError) as e:  # More specific exception handling
         st.error(f"Error: Could not find the required column: {e}")
         return None
@@ -86,12 +117,6 @@ def process_drop_points(df, reference_lat, reference_lon):
         st.error(f"Error: Latitudes or Longitudes could not be converted to numeric data: {e}")
         return None
 
-
-    # Calculate distances and create the distance bucket column
-    df['Distance (km)'] = df.apply(lambda row: calculate_distance(reference_lat, reference_lon, row[lat_column], row[lon_column]), axis=1)
-    df['Distance Bucket'] = df['Distance (km)'].apply(categorize_distance)
-
-    return df
 
 def create_input_template(file_name="drop_point_template.csv"):  # Corrected Function signature
     """
@@ -151,48 +176,33 @@ create_input_template() # call function here
 st.sidebar.header("Upload CSV File")
 uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
-# --- 3. Input Reference Coordinates ---
-st.sidebar.header("Enter Reference Coordinates")
-reference_latitude = st.sidebar.number_input("Reference Latitude", min_value=-90.0, max_value=90.0, value=12.9392379)
-reference_longitude = st.sidebar.number_input("Reference Longitude", min_value=-180.0, max_value=180.0, value=77.7289339)
+
 
 # --- 4. Process Data (if file uploaded and coordinates entered) ---
-if uploaded_file is not None and reference_latitude is not None and reference_longitude is not None:
+if uploaded_file is not None :
     try:
         df = pd.read_csv(uploaded_file)
-        # Get unique city names
-        if 'city name' not in df.columns:
-            st.error("Error: 'city name' column not found.  Please ensure it exists in your CSV.")
-        else:
-            cities = df['city name'].unique()
-            all_processed_dfs = {} # Store all DataFrames
-
-            for city in cities:
-                city_df = df[df['city name'] == city].copy() # Filter for current city.  Use .copy() to avoid SettingWithCopyWarning
-                processed_df = process_drop_points(city_df, reference_latitude, reference_longitude)
-                if processed_df is not None:  # Check if process_drop_points() was successful.
-                    all_processed_dfs[city] = processed_df # Store processed df by city
+        # Process the DataFrame
+        processed_df = process_drop_points(df.copy())  # Pass a copy to avoid modifying the original
+        if processed_df is not None:
             # --- Display Results ---
-            if all_processed_dfs: # if data processed.
-                for city, processed_df in all_processed_dfs.items():
-                    st.subheader(f"Processed Data for {city}")
-                    st.dataframe(processed_df)
-                    st.subheader(f"Distance Bucket Counts for {city}")
-                    st.write(processed_df['Distance Bucket'].value_counts()) # Print counts
-                # --- Download Button for Results (Combined) ---
-                # Combine all dataframes.
-                combined_df = pd.concat(all_processed_dfs.values(), ignore_index=True)
-                csv_buffer = io.StringIO()
-                combined_df.to_csv(csv_buffer, index=False)
-                b = bytes(csv_buffer.getvalue().encode()) # convert the text data to bytes
-                st.download_button(
-                    label="Download Processed Data (All Cities) as CSV",
-                    data=b,
-                    file_name="processed_drop_points_all.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No data could be processed.  Check your CSV data and coordinates.")
+            st.subheader("Processed Data")
+            st.dataframe(processed_df) # Use st.dataframe to render the DataFrame
+            st.subheader("Distance Bucket Counts")
+            st.write(processed_df['Distance Bucket'].value_counts())
+
+
+            # --- Download Button for Results ---
+            csv_buffer = io.StringIO()
+            processed_df.to_csv(csv_buffer, index=False)
+            # Convert the buffer to bytes
+            b = bytes(csv_buffer.getvalue().encode())
+            st.download_button(
+                label="Download Processed Data as CSV",
+                data=b,
+                file_name="processed_drop_points.csv",
+                mime="text/csv"
+            )
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
